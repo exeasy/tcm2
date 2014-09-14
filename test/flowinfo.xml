@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TC_MONITOR_INFO>
+        <timestamp>2011-07-02 12:06:42</timestamp>
+        <ROUTER id="1">
+                <interface id="0">
+                        <interface_name>eth0</interface_name>
+                        <flow_info>
+                                <flow>
+                                        <src>192.168.1.4</src>
+                                        <dst>83.170.6.76</dst>
+                                        <input_if>-1</input_if>
+                                        <output_if>0</output_if>
+                                        <send_rate>89</send_rate>
+                                </flow>
+                        </flow_info>
+                </interface>
+        </ROUTER>
+</TC_MONITOR_INFO>
+

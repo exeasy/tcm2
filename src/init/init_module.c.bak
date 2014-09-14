@@ -1,0 +1,580 @@
+/************************************************************
+
+Copyright (C), 2011-, BUPT
+FileName:      init_module.c
+Author:
+Version :
+Date:
+Description:	this file included all kinds of init functions.
+Function List:
+Modify History:
+<author> <time> <version > <desc>
+
+**********************************************************/
+
+#include "public_include.h"
+#include "list.h"
+#include "ip_list.h"
+#include "packet.h"
+#include "util.h"
+#include "interface.h"
+
+extern struct _ip_func flow_operation[2];
+
+static int	init_flow_operation();
+static void	init_tc_sys_list();
+struct _ip_func *get_operation_func( unsigned int ip_v );
+
+char	*ipv4_operate( const u_char *packet );
+int	ipv4_print_data( const char *flow );
+struct list_head*       ipv4_search( char *flow, int if_index );
+int     ipv4_add( char *flow, int if_index );
+int     ipv4_update( struct list_head *p, char *flow );
+int     ipv4_delete( struct list_head *p );
+
+char	*ipv6_operate( const u_char *packet );
+int	ipv6_print_data( const char *flow );
+struct list_head*	ipv6_search( char *flow, int if_index );
+int     ipv6_add( char *flow, int if_index );
+int     ipv6_update( struct list_head *p, char *flow );
+int     ipv6_delete( struct list_head *p );
+
+/**************************************
+
+ *
+ * function init_module()
+ *
+ * inputs:	null
+ * outputs:     null
+ * return: 
+ * create date: 20110608
+ * describe:
+	1.init flow operation function, including ipv4 flow function
+		and ipv6 flow function
+	2.init system list that stored flow information
+
+**************************************/
+
+void	init_module()
+{
+	int i = 0;
+	int	s_net = 0;
+	int	seq = 0;
+	//get interface name
+	s_net = tc_netlink_open( &seq );
+	get_all_interfaces_info( s_net, seq, if_array );
+	print_all_interfaces( if_array );
+
+	//init flow operation function
+	init_flow_operation();
+
+	//init system list
+	init_tc_sys_list();
+}
+
+/**
+ * get operateion function by ip_version
+ * @param input:
+        unsigned int ip_v
+ * @param output:
+	struct _ip_func *p:related operation function.
+ * @return
+        p != NULL:success
+        p == NULL:fail
+ */
+
+struct _ip_func *get_operation_func( unsigned int ip_v )
+{
+	struct _ip_func *p = NULL;
+	int	i = 0;
+
+	for( i=0; i<2; i++ )	
+	{
+		if( flow_operation[i].ip_v == ip_v )
+		{
+			p = &flow_operation[i];
+		}
+	}
+
+	return p;
+}
+
+/**
+ * this function is used to handle ipv4 packet
+ * @param input:
+        const u_char *packet:ipv4 packet
+ * @param output:
+	char *p: this function convert type of struct _ipv4_flow to type of char
+ * @return
+        p != NULL:success
+        p == NULL:fail
+ */
+
+char	*ipv4_operate( const u_char *packet )
+{
+	if( packet == NULL )
+	{
+		return NULL;
+	}
+
+	struct ether_header *ethernet_protocol = NULL;
+	struct ip *iph = NULL;
+
+	//struct ether_header
+	ethernet_protocol = (struct ether_header *)(packet);
+	memcpy( ipv4_flow.ether_shost, ethernet_protocol->ether_shost, sizeof(ipv4_flow.ether_shost) );
+	memcpy( ipv4_flow.ether_dhost, ethernet_protocol->ether_dhost, sizeof(ipv4_flow.ether_dhost) );
+
+	//struct ip header
+	iph = (struct ip *)(packet+sizeof(struct ether_header) );
+
+	memcpy( &(ipv4_flow.ip_src), &(iph->ip_src), sizeof(struct in_addr) );
+	memcpy( &(ipv4_flow.ip_dst), &(iph->ip_dst), sizeof(struct in_addr) );
+	ipv4_flow.total_send = ntohs(iph->ip_len);
+	
+	return (char *)(&ipv4_flow);
+}
+
+/**
+ * this function print data
+ * @param input:
+        const char *flow: flow
+ * @param output:
+ * @return
+ */
+
+int	ipv4_print_data( const char *flow )
+{
+	if( flow == NULL )
+	{
+		return TC_ERROR;
+	}
+
+	struct _ipv4_flow *p = NULL;
+	u_char	*mac_string = NULL;
+
+	p = (struct _ipv4_flow *)flow;
+
+	//interface address
+	printf( "[%s][%d]Mac Source Address is : \n", __FILE__, __LINE__ );
+	mac_string = p->ether_shost;
+	if( mac_string != NULL )
+	{
+		printf("%02x:%02x:%02x:%02x:%02x:%02x\n", *mac_string, *(mac_string + 1), *(mac_string + 2), *(mac_string + 3), *(mac_string + 4), *(mac_string + 5));
+	}
+
+	printf( "[%s][%d]Mac Destination Address is : \n", __FILE__, __LINE__ );
+	mac_string = NULL;
+	mac_string = p->ether_dhost;
+	if( mac_string != NULL )
+	{
+		printf("%02x:%02x:%02x:%02x:%02x:%02x\n", *mac_string, *(mac_string + 1), *(mac_string + 2), *(mac_string + 3), *(mac_string + 4), *(mac_string + 5));
+	}
+
+	//ip address
+	char	ip_addr[INET6_ADDRSTRLEN+1];
+	memset( ip_addr, 0x00, sizeof(ip_addr) );
+	inet_ntop(AF_INET, (void *)&(p->ip_src), ip_addr, sizeof(ip_addr)-1);
+	printf( "[%s][%d]src ip=[%s]\n", __FILE__, __LINE__, ip_addr );
+
+	memset( ip_addr, 0x00, sizeof(ip_addr) );
+	inet_ntop(AF_INET, (void *)&(p->ip_dst), ip_addr, sizeof(ip_addr)-1);
+	printf( "[%s][%d]dst ip=[%s]\n", __FILE__, __LINE__, ip_addr );
+
+	//flow's length
+	printf( "[%s][%d]flow len=[%d]\n", __FILE__, __LINE__, p->total_send );
+
+	return 0;
+}
+
+/**
+ * this function is looking up
+ * @param input:
+        char *flow
+ * @param output:
+	struct list_head *p;
+ * @return
+        p != NULL:success
+        p == NULL:fail
+ */
+
+struct list_head*       ipv4_search( char *flow, int if_index )
+//struct list_head*       ipv4_search( char *flow, int (*ipv4_policy_compare)( const char *, const char *) )
+{
+	if( flow == NULL )
+	{
+		return NULL;
+	}
+
+	struct _ipv4_flow *p = NULL;
+	struct list_head *tmp = NULL;
+	struct list_head *head = NULL;
+	struct _ipv4_struct *ipv4_node = NULL;
+	int	flow_direction = 0;
+
+	p = (struct _ipv4_flow *)flow;
+	printf( "[%s][%d]ifx=[%d]\n", __FILE__, __LINE__, if_index );
+	u_char *mac_string = p->ether_shost;
+	if( mac_string != NULL )
+	{
+		printf("%02x:%02x:%02x:%02x:%02x:%02x\n", *mac_string, *(mac_string + 1), *(mac_string + 2), *(mac_string + 3), *(mac_string + 4), *(mac_string + 5));
+	}
+	mac_string = if_array[if_index].ether_host;
+	printf("%02x:%02x:%02x:%02x:%02x:%02x\n", *mac_string, *(mac_string + 1), *(mac_string + 2), *(mac_string + 3), *(mac_string + 4), *(mac_string + 5));
+	printf( "len=[%d][%d]\n", sizeof(p->ether_shost), sizeof(u_int8_t) );
+	
+
+	if( memcmp(p->ether_shost, if_array[if_index].ether_host, sizeof(p->ether_shost)-1) == 0 )
+	{
+printf( "[%s][%d]\n", __FILE__, __LINE__ );
+		p->flow_direction = FLOW_OUT;
+		head = &( ipv4_head_out[if_index].node_head );
+	}
+	else if( memcmp(p->ether_dhost, if_array[if_index].ether_host, sizeof(p->ether_shost)-1) == 0 )
+	{
+printf( "[%s][%d]\n", __FILE__, __LINE__ );
+		p->flow_direction = FLOW_IN;
+		head = &( ipv4_head_out[if_index].node_head );
+	}	
+
+	//get flow direction
+
+	//struct _tc_sys_list     ipv4_head;
+	//look up
+	//head = &( ipv4_head[if_index].node_head );
+	tmp = head->next;
+	////tmp = ipv4_head[if_index].node_head.next;
+printf( "[%s][%d]\n", __FILE__, __LINE__ );
+
+	while( tmp != head )
+	////while( tmp != &(ipv4_head[if_index].node_head) )
+	{
+printf( "[%s][%d]\n", __FILE__, __LINE__ );
+		ipv4_node = list_entry( tmp, struct _ipv4_struct, node );	
+		//policy function
+		if( ipv4_policy_compare( (char *)(ipv4_node), flow ) == TC_TRUE )
+		{
+			break;
+		}
+printf( "[%s][%d]\n", __FILE__, __LINE__ );
+
+		tmp = tmp->next;
+	}
+
+	if( tmp == head )
+	//if( tmp == &(ipv4_head[if_index].node_head) )
+	{
+		tmp = NULL;
+	}
+
+	return tmp;
+}
+
+/**
+ * this function is add a node to a system list
+ * @param input:
+        char *flow
+ * @param output:
+	struct list_head *p;
+ * @return
+        p != NULL:success
+        p == NULL:fail
+ */
+
+int     ipv4_add( char *flow, int if_index )
+{
+	if( flow == NULL )
+	{
+		return TC_ERROR;
+	}
+
+	struct _ipv4_struct *ipv4_struct = NULL;
+
+	ipv4_struct = (struct _ipv4_struct *)malloc(sizeof(struct _ipv4_struct) );
+	if( ipv4_struct == NULL )
+	{
+		return TC_ERROR;
+	}
+
+	//memset( ipv4_struct, 0x00, sizeof(struct _ipv4_struct) );
+
+	//copy some value to this node
+	ipv4_struct->ip_v = 4;
+	ipv4_struct->used = 1;
+	memcpy( &(ipv4_struct->flow), (struct _ipv4_flow *)flow, sizeof(struct _ipv4_flow) );
+
+	//insert this node to system list
+	if( ((struct _ipv4_flow *)flow)->flow_direction = FLOW_OUT )
+	{
+		list_add_tail( &(ipv4_struct->node), &(ipv4_head_out[if_index].node_head) );
+	}
+	else if( ((struct _ipv4_flow *)flow)->flow_direction = FLOW_IN )
+	{
+		list_add_tail( &(ipv4_struct->node), &(ipv4_head_in[if_index].node_head) );
+	}
+
+	return TC_SUCCESS;
+}
+
+int     ipv4_update( struct list_head *p, char *flow )
+{
+	struct _ipv4_struct *ipv4_struct = NULL;	
+
+	if( p == NULL || flow == NULL )
+	{
+		return TC_ERROR;
+	}
+
+	ipv4_struct = list_entry( p, struct _ipv4_struct, node );
+
+	if( ipv4_struct == NULL )
+	{
+		return TC_ERROR;
+	}
+
+	(ipv4_struct->flow).total_send += ((struct _ipv4_flow *)flow)->total_send;
+
+	return TC_SUCCESS;
+}
+
+int     ipv4_delete( struct list_head *p )
+{
+	struct _ipv4_struct *ipv4_struct = NULL;
+
+	if( p == NULL )
+	{
+		return TC_ERROR;
+	}
+
+	ipv4_struct = list_entry( p, struct _ipv4_struct, node );
+
+	free( ipv4_struct );
+
+	ipv4_struct = NULL;
+
+	return TC_SUCCESS;
+}
+
+char	*ipv6_operate( const u_char *packet )
+{
+	if( packet == NULL )
+	{
+		return NULL;
+	}
+
+	struct ether_header *ethernet_protocol = NULL;
+	struct ip6_hdr *ip6h = NULL;
+
+	//struct ether_header
+	ethernet_protocol = (struct ether_header *)(packet);
+	memcpy( ipv6_flow.ether_shost, ethernet_protocol->ether_shost, sizeof(ipv6_flow.ether_shost) );
+	memcpy( ipv6_flow.ether_dhost, ethernet_protocol->ether_dhost, sizeof(ipv6_flow.ether_dhost) );
+
+	//struct ip6 header
+	ip6h = (struct ip6_hdr *)(packet+sizeof(struct ether_header) );
+	memcpy( &(ipv6_flow.ip6_src), &(ip6h->ip6_src), sizeof(struct in6_addr) );
+	memcpy( &(ipv6_flow.ip6_dst), &(ip6h->ip6_dst), sizeof(struct in6_addr) );
+	ipv6_flow.total_send = ntohs(ip6h->ip6_plen);
+	
+	return (char *)(&ipv6_flow);
+}
+
+int	ipv6_print_data( const char *flow )
+{
+	if( flow == NULL )
+	{
+		return TC_ERROR;
+	}
+
+	struct _ipv6_flow *p = NULL;
+	u_char	*mac_string = NULL;
+
+	p = (struct _ipv6_flow *)flow;
+
+	//interface address
+	printf( "[%s][%d]Mac Source Address is : \n", __FILE__, __LINE__ );
+	mac_string = p->ether_shost;
+	if( mac_string != NULL )
+	{
+		printf("%02x:%02x:%02x:%02x:%02x:%02x\n", *mac_string, *(mac_string + 1), *(mac_string + 2), *(mac_string + 3), *(mac_string + 4), *(mac_string + 5));
+	}
+
+	printf( "[%s][%d]Mac Destination Address is : \n", __FILE__, __LINE__ );
+	mac_string = NULL;
+	mac_string = p->ether_dhost;
+	if( mac_string != NULL )
+	{
+		printf("%02x:%02x:%02x:%02x:%02x:%02x\n", *mac_string, *(mac_string + 1), *(mac_string + 2), *(mac_string + 3), *(mac_string + 4), *(mac_string + 5));
+	}
+
+	//ip address
+
+	char	ip_addr[INET6_ADDRSTRLEN+1];
+	memset( ip_addr, 0x00, sizeof(ip_addr) );
+	inet_ntop(AF_INET6, (void *)&(p->ip6_src), ip_addr, sizeof(ip_addr)-1);
+	printf( "[%s][%d]src ip=[%s]\n", __FILE__, __LINE__, ip_addr );
+
+	memset( ip_addr, 0x00, sizeof(ip_addr) );
+	inet_ntop(AF_INET6, (void *)&(p->ip6_dst), ip_addr, sizeof(ip_addr)-1);
+	printf( "[%s][%d]dst ip=[%s]\n", __FILE__, __LINE__, ip_addr );
+
+	printf( "[%s][%d]flow len=[%d]\n", __FILE__, __LINE__, p->total_send );
+
+	return 0;
+}
+
+struct list_head*	ipv6_search( char *flow, int if_index )
+{
+	if( flow == NULL )
+	{
+		return NULL;
+	}
+
+	struct _ipv6_flow *p = NULL;
+	struct list_head *tmp = NULL;
+	struct list_head *head = NULL;
+	struct _ipv6_struct *ipv6_node = NULL;
+
+	//p = (struct _ipv6_flow *)flow;
+
+	//struct _tc_sys_list     ipv6_head;
+	//look up
+	head = &(ipv6_head[if_index].node_head);
+	tmp = head->next;
+	//tmp = ipv6_head.node_head.next;
+
+	while( tmp != head )
+	//while( tmp != &(ipv6_head.node_head) )
+	{
+	//printf( "\n\n\n[%s][%d]\n", __FILE__, __LINE__ );
+		ipv6_node = list_entry( tmp, struct _ipv6_struct, node );	
+		//policy function
+		if( ipv6_policy_compare( (char *)(ipv6_node), flow ) == TC_TRUE )
+		{
+			break;
+		}
+
+		tmp = tmp->next;
+	}
+
+	if( tmp == head )
+	//if( tmp == &(ipv6_head.node_head) )
+	{
+		tmp = NULL;
+	}
+
+	return tmp;
+}
+
+int     ipv6_add( char *flow, int if_index )
+{
+	if( flow == NULL )
+	{
+		return TC_ERROR;
+	}
+
+	struct _ipv6_struct *ipv6_struct = NULL;
+
+	ipv6_struct = (struct _ipv6_struct *)malloc(sizeof(struct _ipv6_struct) );
+	if( ipv6_struct == NULL )
+	{
+		return TC_ERROR;
+	}
+
+	//memset( ipv6_struct, 0x00, sizeof(struct _ipv6_struct) );
+
+	//copy some value to this node
+	ipv6_struct->ip_v = 6;
+	ipv6_struct->used = 1;
+	memcpy( &(ipv6_struct->flow), (struct _ipv6_flow *)flow, sizeof(struct _ipv6_flow) );
+
+	//insert this node to system list
+	list_add_tail( &(ipv6_struct->node), &(ipv6_head[if_index].node_head) );
+
+	return TC_SUCCESS;
+}
+
+int     ipv6_update( struct list_head *p, char *flow )
+{
+	struct _ipv6_struct *ipv6_struct = NULL;	
+
+	if( p == NULL || flow == NULL )
+	{
+		return TC_ERROR;
+	}
+
+	ipv6_struct = list_entry( p, struct _ipv6_struct, node );
+
+	if( ipv6_struct == NULL )
+	{
+		return TC_ERROR;
+	}
+
+	(ipv6_struct->flow).total_send += ((struct _ipv6_flow *)flow)->total_send;
+
+	return TC_SUCCESS;
+}
+
+int     ipv6_delete( struct list_head *p )
+{
+	struct _ipv6_struct *ipv6_struct = NULL;
+
+	if( p == NULL )
+	{
+		return TC_ERROR;
+	}
+
+	ipv6_struct = list_entry( p, struct _ipv6_struct, node );
+
+	free( ipv6_struct );
+
+	ipv6_struct = NULL;
+
+	return TC_SUCCESS;
+}
+
+static int	init_flow_operation()
+{
+	flow_operation[0].ip_v = 4;
+	flow_operation[0].operate = ipv4_operate;
+	flow_operation[0].print_data = ipv4_print_data;
+	flow_operation[0].search = ipv4_search;
+	flow_operation[0].add = ipv4_add;
+	flow_operation[0].update = ipv4_update;
+	flow_operation[0].delete = ipv4_delete;
+
+	flow_operation[1].ip_v = 6;
+	flow_operation[1].operate = ipv6_operate;
+	flow_operation[1].print_data = ipv6_print_data;
+	flow_operation[1].search = ipv6_search;
+	flow_operation[1].add = ipv6_add;
+	flow_operation[1].update = ipv6_update;
+	flow_operation[1].delete = ipv6_delete;
+
+	return TC_SUCCESS;
+}
+
+/**************************************
+
+ *
+ * function init_tc_sys_list()
+ *
+ * inputs:	null
+ * outputs:     null
+ * return: 
+ * create date: 20110608
+ * describe: create system list that stored flow information
+
+**************************************/
+
+static void	init_tc_sys_list()
+{
+	int i = 0;
+
+	for( i=0; i<g_interface_size&&i<MAX_INTERFACE_SIZE; i++ )
+	{
+		INIT_LIST_HEAD( &(ipv4_head_in[i].node_head) );
+		INIT_LIST_HEAD( &(ipv4_head_out[i].node_head) );
+		INIT_LIST_HEAD( &(ipv6_head[i].node_head) );
+	}
+}

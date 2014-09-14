@@ -1,0 +1,18 @@
+
+last version
+date:2011-09-14
+
+目录文件说明：
+etc/	存放host_config.xml配置文件
+include/	存放库文件
+src/		存放源程序代码
+test/		xml例子文件以及libxml2,libpcap安装文件
+makefile	makefile文件
+
+b != 0
+T[05:23:49]P[5373][./src/analysis/analysis.c][197]total_packets=[0]
+T[05:23:49]P[5373][./src/analysis/analysis.c][198]total_packets=[0]
+T[05:23:49]P[5373][./src/analysis/analysis.c][199]out_sampled_rate=[-nan]
+T[05:23:49]P[5373][./src/analysis/analysis.c][174]out_sampled_rate=[-nan]
+T[05:23:49]P[5373][./src/analysis/analysis.c][138]b=[-2147483648]
+

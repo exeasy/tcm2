@@ -1,0 +1,17 @@
+//interface information
+
+<?xml version="1.0" encoding="UTF-8"?>
+<INTERFACE_INFO>
+        <timestamp>2011-09-21 14:24:54</timestamp>
+        <ROUTER id="0">
+                <interface id="0">
+                        <interface_name>eth0</interface_name>
+                        <interface_ipv4_address>192.168.1.14</interface_ipv4_address>
+                        <interface_ipv4_netmask>255.255.255.0</interface_ipv4_netmask>
+                        <interface_ipv6_address>3ffe:0:0:56::6</interface_ipv6_address>
+                        <interface_ipv6_netmask>64</interface_ipv6_netmask>
+                        <interface_mac>00:23:54:51:f5:6b</interface_mac>
+                        <interface+bandwidth>24000000</interface+bandwidth>
+                </interface>
+        </ROUTER>
+</INTERFACE_INFO>

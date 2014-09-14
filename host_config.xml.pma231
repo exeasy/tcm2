@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<host_config>
+<router_id>231</router_id>
+<pma_addr>127.0.0.1</pma_addr>
+<pma_port>8025</pma_port>
+<captured_time>15000000</captured_time>
+<interval>2000000</interval>
+<nmax>300000</nmax>
+<a>1</a>
+<p>0.01</p>
+</host_config>

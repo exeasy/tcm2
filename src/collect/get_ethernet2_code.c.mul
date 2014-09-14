@@ -1,0 +1,183 @@
+#include "public_include.h"
+#include "public.h"
+#include "interface.h"
+#include "packet.h"
+
+extern struct _tc_config_struct g_host_config;
+
+static void	ethernet_protocol_packet_callback( u_char *argument, const struct pcap_pkthdr *packet_header, const u_char *packet_content, int if_index )
+{
+	u_short ethernet_type;
+	struct ether_header *ethernet_protocol;
+	u_char *mac_string;
+	//static int packet_number = 1;
+
+	WriteLog( LOGFILE, "**************************************************\n");
+	//WriteLog( LOGFILE, "The %d Ethernet  packet is captured.\n", packet_number);
+	//WriteLog( LOGFILE, "-----------    Ehternet Potocol (Link Layer)  ------------\n");
+	//WriteLog( LOGFILE, "The %d Ethernet  packet is captured.\n", packet_number);
+	ethernet_protocol = (struct ether_header*)packet_content;
+	//WriteLog( LOGFILE, "Ethernet type is :\n");
+	ethernet_type = ntohs(ethernet_protocol->ether_type);
+	//WriteLog( LOGFILE, "%04x\n", ethernet_type);
+	switch (ethernet_type)
+	{
+		case ETHERTYPE_IP:
+		case ETHERTYPE_IPV6:
+			//WriteLog( LOGFILE, "The network layer is IP protocol\n");
+			//analysis module
+			analysis_module( packet_content, if_index );
+			break;
+		case 0x0806:
+			WriteLog( LOGFILE, "The network layer is ARP protocol\n");
+			break;
+		case 0x8035:
+			WriteLog( LOGFILE, "The network layer is RARP protocol\n");
+			break;
+		default:
+			break;
+	}
+
+/********************
+	WriteLog( LOGFILE, "Mac Source Address is : \n");
+	mac_string = ethernet_protocol->ether_shost;
+	WriteLog( LOGFILE, "%02x:%02x:%02x:%02x:%02x:%02x\n", *mac_string, *(mac_string + 1), *(mac_string + 2), *(mac_string + 3), *(mac_string + 4), *(mac_string + 5));
+	WriteLog( LOGFILE, "Mac Destination Address is : \n");
+	mac_string = ethernet_protocol->ether_dhost;
+	WriteLog( LOGFILE, "%02x:%02x:%02x:%02x:%02x:%02x\n", *mac_string, *(mac_string + 1), *(mac_string + 2), *(mac_string + 3), *(mac_string + 4), *(mac_string + 5));
+********************/
+
+	WriteLog( LOGFILE, "**************************************************\n");
+
+	//packet_number++;
+}
+
+/*
+	//char bpf_filter_string[] = "ip6 and ether src 00:23:54:51:f5:6b";
+	//char bpf_filter_string[] = "ip6";
+	//char bpf_filter_string[] = "ip";
+	//char bpf_filter_string[] = "ip and (ether src 00:23:54:51:f5:6b or ether dst 00:23:54:51:f5:6b)";
+*/
+
+static void	get_interface_flow_info( int if_index )
+{
+	pcap_t *pcap_handle = NULL;
+	char	error_content[PCAP_ERRBUF_SIZE];
+	char	*net_interface;
+	struct bpf_program bpf_filter;
+	char	bpf_filter_string[MAX_BUFF_LEN];
+	char	ether_host[MAX_BUFF_LEN];
+	u_char	*mac_string = NULL;
+	bpf_u_int32 net_mask;
+	bpf_u_int32 net_ip;
+	struct pcap_pkthdr protocol_header;
+	int	to_ms = 0;
+	const u_char *packet_content = NULL;
+	struct timeval	start;
+	int	difftime;
+	int	g_captured_time = 0;
+
+	memset( bpf_filter_string, 0x00, sizeof(bpf_filter_string) );
+	memset( ether_host, 0x00, sizeof(ether_host) );
+
+	//get mac
+	mac_string = if_array[if_index].ether_host;
+	if( mac_string == NULL )
+	{
+		WriteLog1( LOGFILE,  "[%s][%d]error \n", __FILE__, __LINE__ );
+		return ;
+	}
+	snprintf( ether_host, sizeof(ether_host)-1, "%02x:%02x:%02x:%02x:%02x:%02x", *mac_string, *(mac_string + 1), *(mac_string + 2), *(mac_string + 3), *(mac_string + 4), *(mac_string + 5) );
+	
+	//config bpf_filter_string
+	snprintf( bpf_filter_string, sizeof(bpf_filter_string)-1, "ip and (ether src %s or ether dst %s )", ether_host, ether_host );
+
+	net_interface = if_array[if_index].name;
+	if( net_interface == NULL )
+	{
+		WriteLog1( LOGFILE,  "[%s][%d]error \n", __FILE__, __LINE__ );
+		return ;
+	}
+	WriteLog( LOGFILE,  "[%s][%d]interface name=[%s]\n", __FILE__, __LINE__, net_interface );
+
+	g_captured_time = g_host_config.captured_time;
+	//to_ms = g_captured_time / 1000;
+	to_ms = 0;
+	pcap_handle = pcap_open_live( net_interface, BUFSIZ, 1, to_ms, error_content);
+	if( pcap_handle == NULL )
+	{
+		WriteLog1( LOGFILE,  "[%s][%d]error=[%s]\n", __FILE__, __LINE__, error_content );
+		return ;
+	}
+	WriteLog( LOGFILE,  "[%s][%d]pcap_handle=[%x]\n", __FILE__, __LINE__, pcap_handle );
+	pcap_compile( pcap_handle, &bpf_filter, bpf_filter_string, 0, net_ip );
+	pcap_setfilter( pcap_handle, &bpf_filter );
+	if( pcap_datalink(pcap_handle) != DLT_EN10MB )
+	{
+		WriteLog1( LOGFILE,  "[%s][%d]\n", __FILE__, __LINE__ );
+		if( pcap_handle != NULL )
+		{
+			pcap_close(pcap_handle);
+		}
+
+		return ;
+	}
+
+	//g_captured_time = interface_sampled_struct[0].captured_time;
+	WriteLog( LOGFILE,  "[%s][%d]%d\n", __FILE__, __LINE__, g_captured_time );
+	gettimeofday( &start, NULL );	
+	WriteLog1( LOGFILE,  "[%s][%d]start time: %ld secs %ld micros\n", __FILE__, __LINE__, start.tv_sec, start.tv_usec );
+
+	while( 1 )
+	{
+		if( pcap_handle == NULL )
+		{
+			WriteLog1( LOGFILE,  "[%s][%d]pcap_handle is null \n", __FILE__, __LINE__ );
+			break;
+		}
+
+		packet_content = pcap_next( pcap_handle, &protocol_header );
+		if( packet_content != NULL )
+		{
+			//WriteLog( LOGFILE,  "[%s][%d]Capture Time is:\n", __FILE__, __LINE__ );
+			//WriteLog( LOGFILE,  "[%s][%d]%s", __FILE__, __LINE__, ctime((const time_t*) &protocol_header.ts.tv_sec) );
+			//WriteLog( LOGFILE,  "[%s][%d]Packet Length is:\n", __FILE__, __LINE__ );
+			//WriteLog( LOGFILE,  "[%s][%d]%d\n", __FILE__, __LINE__, protocol_header.len );
+
+//	WriteLog( LOGFILE,  "[%s][%d]this time: %ld secs %ld micros\n", __FILE__, __LINE__, protocol_header.ts.tv_sec, protocol_header.ts.tv_usec );
+
+			difftime = get_diff_time( &start, &protocol_header.ts );
+			//WriteLog( LOGFILE,  "[%s][%d]difftime=[%d]\n", __FILE__, __LINE__, difftime );
+
+			ethernet_protocol_packet_callback( NULL, NULL, packet_content, if_index );
+			if( difftime > g_captured_time )
+			{
+				WriteLog( LOGFILE,  "[%s][%d]\n\n\nbreak;\n\n", __FILE__, __LINE__ );
+				break;
+			}
+
+		//	free( (void *)packet_content );
+		}
+	}
+
+	WriteLog1( LOGFILE,  "[%s][%d]this time: %ld secs %ld micros\n", __FILE__, __LINE__, protocol_header.ts.tv_sec, protocol_header.ts.tv_usec );
+
+	if( pcap_handle != NULL )
+	{
+		pcap_close(pcap_handle);
+	}
+
+	if_array[if_index].interval = difftime;
+}
+
+void collect_information( int if_index )
+{
+	int	i = 0;
+	int	interval_time = 0;
+
+	i = if_index;
+	if( 1 == if_array[i].active )
+	{
+		get_interface_flow_info( i );
+	}
+}
